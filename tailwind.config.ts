@@ -61,7 +61,18 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
+				},
+				horror: {
+					black: '#1F1F1F',
+					red: '#DC2626',
+					gray: '#A9A9A9',
+					darkred: '#B22222',
+					burgundy: '#2D1B1B'
 				}
+			},
+			fontFamily: {
+				heading: ['Oswald', 'sans-serif'],
+				body: ['Roboto', 'sans-serif']
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
@@ -84,6 +95,14 @@ export default {
 					to: {
 						height: '0'
 					}
+				},
+				fadeIn: {
+					'0%': { opacity: '0', transform: 'translateY(10px)' },
+					'100%': { opacity: '1', transform: 'translateY(0)' }
+				},
+				glow: {
+					from: { boxShadow: '0 0 10px #DC2626' },
+					to: { boxShadow: '0 0 20px #DC2626, 0 0 30px #DC2626' }
 				}
 			},
 			animation: {
