@@ -1,0 +1,24 @@
+{
+  "tests": [
+    {
+      "name": "Get all authors",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "authors": "array"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get top authors",
+      "method": "GET",
+      "path": "/?top=4",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "authors": "array"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

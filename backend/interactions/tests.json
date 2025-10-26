@@ -1,0 +1,48 @@
+{
+  "tests": [
+    {
+      "name": "Like a story",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "storyId": 1,
+        "action": "like",
+        "userId": 123
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": true,
+        "liked": true
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Add comment",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "storyId": 1,
+        "action": "comment",
+        "userId": 123,
+        "comment": "Great story!"
+      },
+      "expectedStatus": 201,
+      "expectedBody": {
+        "success": true,
+        "comment": "object"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get comments",
+      "method": "GET",
+      "path": "/?storyId=1",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "comments": "array",
+        "total": "number"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

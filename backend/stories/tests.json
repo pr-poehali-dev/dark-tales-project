@@ -1,0 +1,26 @@
+{
+  "tests": [
+    {
+      "name": "Get all stories",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "stories": "array",
+        "total": "number"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Get story by id",
+      "method": "GET",
+      "path": "/?id=1",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "id": 1,
+        "title": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

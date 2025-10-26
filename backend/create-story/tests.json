@@ -1,0 +1,35 @@
+{
+  "tests": [
+    {
+      "name": "Create new story",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "title": "Test Story",
+        "description": "Test description",
+        "genre": ["Horror", "Thriller"],
+        "authorId": 1,
+        "readingTime": 10
+      },
+      "expectedStatus": 201,
+      "expectedBody": {
+        "success": true,
+        "story": "object"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Missing required fields",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "title": "Test Story"
+      },
+      "expectedStatus": 400,
+      "expectedBody": {
+        "error": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
