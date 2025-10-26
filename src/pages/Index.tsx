@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -26,69 +27,26 @@ interface Story {
 }
 
 const Index = () => {
-  const [stories] = useState<Story[]>([
-    {
-      id: 1,
-      title: "Тени в подвале",
-      author: {
-        name: "Александр Темный",
-        avatar: "/img/4a8f619e-b09e-4045-86d6-b6e8f9490542.jpg",
-        rating: 4.8,
-        stories: 23
-      },
-      description: "Когда старый дом начинает скрипеть по ночам, а тени на стенах становятся длиннее, становится ясно — здесь живет что-то древнее и злобное...",
-      genre: ["Мистика", "Психологический ужас"],
-      rating: 4.9,
-      views: 1250,
-      likes: 89,
-      comments: 23,
-      publishedAt: "2024-01-15",
-      readingTime: 8
-    },
-    {
-      id: 2,
-      title: "Последний поезд",
-      author: {
-        name: "Мария Кровавая",
-        avatar: "/img/4a8f619e-b09e-4045-86d6-b6e8f9490542.jpg",
-        rating: 4.6,
-        stories: 15
-      },
-      description: "Полночный поезд, который приходит только раз в год. Пассажиры говорят, что билет в один конец стоит всего лишь душу...",
-      genre: ["Сверхъестественное", "Готика"],
-      rating: 4.7,
-      views: 980,
-      likes: 67,
-      comments: 18,
-      publishedAt: "2024-01-12",
-      readingTime: 12
-    },
-    {
-      id: 3,
-      title: "Зеркальная комната",
-      author: {
-        name: "Николай Мрачный",
-        avatar: "/img/4a8f619e-b09e-4045-86d6-b6e8f9490542.jpg",
-        rating: 4.9,
-        stories: 31
-      },
-      description: "В каждом зеркале живет отражение, но что делать, если отражение начинает жить своей жизнью и планирует занять твое место?",
-      genre: ["Паранормальное", "Триллер"],
-      rating: 4.8,
-      views: 1560,
-      likes: 124,
-      comments: 35,
-      publishedAt: "2024-01-10",
-      readingTime: 15
-    }
-  ]);
+  const navigate = useNavigate();
+  const [stories, setStories] = useState<Story[]>([]);
+  const [topAuthors, setTopAuthors] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [topAuthors] = useState([
-    { name: "Александр Темный", rating: 4.8, stories: 23, followers: 340 },
-    { name: "Мария Кровавая", rating: 4.6, stories: 15, followers: 289 },
-    { name: "Николай Мрачный", rating: 4.9, stories: 31, followers: 456 },
-    { name: "Елена Призрачная", rating: 4.7, stories: 19, followers: 312 },
-  ]);
+  useEffect(() => {
+    const fetchData = async () => {
+      const storiesRes = await fetch('https://functions.poehali.dev/abb0e032-b766-470f-a2cd-43149dc1dcd0');
+      const storiesData = await storiesRes.json();
+      setStories(storiesData.stories || []);
+
+      const authorsRes = await fetch('https://functions.poehali.dev/80a1cb28-bc18-4275-ba3b-719d46db35f7?top=4');
+      const authorsData = await authorsRes.json();
+      setTopAuthors(authorsData.authors || []);
+      
+      setLoading(false);
+    };
+
+    fetchData();
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-horror-black via-horror-burgundy to-horror-black">
@@ -165,7 +123,10 @@ const Index = () => {
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <CardTitle className="text-white font-heading text-xl hover:text-horror-red cursor-pointer transition-colors">
+                            <CardTitle 
+                              className="text-white font-heading text-xl hover:text-horror-red cursor-pointer transition-colors"
+                              onClick={() => navigate(`/story/${story.id}`)}
+                            >
                               {story.title}
                             </CardTitle>
                             <div className="flex items-center space-x-2 text-sm text-horror-gray">
@@ -212,7 +173,11 @@ const Index = () => {
                             {story.rating}
                           </div>
                         </div>
-                        <Button variant="ghost" className="text-horror-red hover:text-horror-red/80 hover:bg-horror-red/10">
+                        <Button 
+                          variant="ghost" 
+                          className="text-horror-red hover:text-horror-red/80 hover:bg-horror-red/10"
+                          onClick={() => navigate(`/story/${story.id}`)}
+                        >
                           Читать →
                         </Button>
                       </div>

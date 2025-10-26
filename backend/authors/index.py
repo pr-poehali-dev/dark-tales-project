@@ -1,5 +1,8 @@
 import json
-from typing import Dict, Any, List
+import os
+from typing import Dict, Any
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     '''
@@ -27,70 +30,41 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         author_id = params.get('id')
         top = params.get('top')
         
-        mock_authors = [
-            {
-                "id": 1,
-                "name": "Александр Темный",
-                "avatar": "/img/4a8f619e-b09e-4045-86d6-b6e8f9490542.jpg",
-                "rating": 4.8,
-                "stories": 23,
-                "followers": 340,
-                "bio": "Мастер психологических триллеров"
-            },
-            {
-                "id": 2,
-                "name": "Мария Кровавая",
-                "avatar": "/img/4a8f619e-b09e-4045-86d6-b6e8f9490542.jpg",
-                "rating": 4.6,
-                "stories": 15,
-                "followers": 289,
-                "bio": "Специалист по готической прозе"
-            },
-            {
-                "id": 3,
-                "name": "Николай Мрачный",
-                "avatar": "/img/4a8f619e-b09e-4045-86d6-b6e8f9490542.jpg",
-                "rating": 4.9,
-                "stories": 31,
-                "followers": 456,
-                "bio": "Король паранормальных историй"
-            },
-            {
-                "id": 4,
-                "name": "Елена Призрачная",
-                "avatar": "/img/4a8f619e-b09e-4045-86d6-b6e8f9490542.jpg",
-                "rating": 4.7,
-                "stories": 19,
-                "followers": 312,
-                "bio": "Создатель мистических сюжетов"
-            }
-        ]
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        cur = conn.cursor(cursor_factory=RealDictCursor)
         
         if author_id:
-            author = next((a for a in mock_authors if a['id'] == int(author_id)), None)
-            if author:
+            cur.execute('''
+                SELECT id, name, avatar, bio, rating, stories_count as stories, followers
+                FROM authors
+                WHERE id = %s
+            ''', (int(author_id),))
+            
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            
+            if not row:
                 return {
-                    'statusCode': 200,
+                    'statusCode': 404,
                     'headers': {
                         'Content-Type': 'application/json',
                         'Access-Control-Allow-Origin': '*'
                     },
                     'isBase64Encoded': False,
-                    'body': json.dumps(author)
+                    'body': json.dumps({'error': 'Author not found'})
                 }
-            return {
-                'statusCode': 404,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'isBase64Encoded': False,
-                'body': json.dumps({'error': 'Author not found'})
+            
+            author = {
+                'id': row['id'],
+                'name': row['name'],
+                'avatar': row['avatar'],
+                'bio': row['bio'],
+                'rating': float(row['rating']) if row['rating'] else 0,
+                'stories': row['stories'],
+                'followers': row['followers']
             }
-        
-        if top:
-            sorted_authors = sorted(mock_authors, key=lambda x: x['followers'], reverse=True)
-            limit = int(top) if top.isdigit() else 4
+            
             return {
                 'statusCode': 200,
                 'headers': {
@@ -98,8 +72,35 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'Access-Control-Allow-Origin': '*'
                 },
                 'isBase64Encoded': False,
-                'body': json.dumps({'authors': sorted_authors[:limit]})
+                'body': json.dumps(author)
             }
+        
+        limit_clause = ''
+        if top and top.isdigit():
+            limit_clause = f'LIMIT {int(top)}'
+        
+        cur.execute(f'''
+            SELECT id, name, avatar, bio, rating, stories_count as stories, followers
+            FROM authors
+            ORDER BY followers DESC
+            {limit_clause}
+        ''')
+        
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        authors = []
+        for row in rows:
+            authors.append({
+                'id': row['id'],
+                'name': row['name'],
+                'avatar': row['avatar'],
+                'bio': row['bio'],
+                'rating': float(row['rating']) if row['rating'] else 0,
+                'stories': row['stories'],
+                'followers': row['followers']
+            })
         
         return {
             'statusCode': 200,
@@ -108,7 +109,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'Access-Control-Allow-Origin': '*'
             },
             'isBase64Encoded': False,
-            'body': json.dumps({'authors': mock_authors})
+            'body': json.dumps({'authors': authors})
         }
     
     return {

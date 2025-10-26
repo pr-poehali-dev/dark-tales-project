@@ -1,6 +1,8 @@
 import json
-from typing import Dict, Any, List, Optional
-from datetime import datetime
+import os
+from typing import Dict, Any
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     '''
@@ -29,96 +31,126 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         genre = params.get('genre')
         sort_by = params.get('sort', 'latest')
         
-        mock_stories = [
-            {
-                "id": 1,
-                "title": "Тени в подвале",
-                "author": {
-                    "id": 1,
-                    "name": "Александр Темный",
-                    "avatar": "/img/4a8f619e-b09e-4045-86d6-b6e8f9490542.jpg",
-                    "rating": 4.8,
-                    "stories": 23
-                },
-                "description": "Когда старый дом начинает скрипеть по ночам, а тени на стенах становятся длиннее, становится ясно — здесь живет что-то древнее и злобное...",
-                "genre": ["Мистика", "Психологический ужас"],
-                "rating": 4.9,
-                "views": 1250,
-                "likes": 89,
-                "comments": 23,
-                "publishedAt": "2024-01-15",
-                "readingTime": 8
-            },
-            {
-                "id": 2,
-                "title": "Последний поезд",
-                "author": {
-                    "id": 2,
-                    "name": "Мария Кровавая",
-                    "avatar": "/img/4a8f619e-b09e-4045-86d6-b6e8f9490542.jpg",
-                    "rating": 4.6,
-                    "stories": 15
-                },
-                "description": "Полночный поезд, который приходит только раз в год. Пассажиры говорят, что билет в один конец стоит всего лишь душу...",
-                "genre": ["Сверхъестественное", "Готика"],
-                "rating": 4.7,
-                "views": 980,
-                "likes": 67,
-                "comments": 18,
-                "publishedAt": "2024-01-12",
-                "readingTime": 12
-            },
-            {
-                "id": 3,
-                "title": "Зеркальная комната",
-                "author": {
-                    "id": 3,
-                    "name": "Николай Мрачный",
-                    "avatar": "/img/4a8f619e-b09e-4045-86d6-b6e8f9490542.jpg",
-                    "rating": 4.9,
-                    "stories": 31
-                },
-                "description": "В каждом зеркале живет отражение, но что делать, если отражение начинает жить своей жизнью и планирует занять твое место?",
-                "genre": ["Паранормальное", "Триллер"],
-                "rating": 4.8,
-                "views": 1560,
-                "likes": 124,
-                "comments": 35,
-                "publishedAt": "2024-01-10",
-                "readingTime": 15
-            }
-        ]
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        cur = conn.cursor(cursor_factory=RealDictCursor)
         
         if story_id:
-            story = next((s for s in mock_stories if s['id'] == int(story_id)), None)
-            if story:
+            cur.execute('''
+                SELECT s.id, s.title, s.description, s.content, s.rating, s.views, 
+                       s.likes, s.comments_count as comments, s.reading_time as "readingTime",
+                       s.published_at::text as "publishedAt",
+                       a.id as author_id, a.name as author_name, a.avatar as author_avatar,
+                       a.rating as author_rating, a.stories_count as author_stories,
+                       array_agg(sg.genre) as genre
+                FROM stories s
+                JOIN authors a ON s.author_id = a.id
+                LEFT JOIN story_genres sg ON s.id = sg.story_id
+                WHERE s.id = %s
+                GROUP BY s.id, a.id
+            ''', (int(story_id),))
+            
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            
+            if not row:
                 return {
-                    'statusCode': 200,
+                    'statusCode': 404,
                     'headers': {
                         'Content-Type': 'application/json',
                         'Access-Control-Allow-Origin': '*'
                     },
                     'isBase64Encoded': False,
-                    'body': json.dumps(story)
+                    'body': json.dumps({'error': 'Story not found'})
                 }
+            
+            story = {
+                'id': row['id'],
+                'title': row['title'],
+                'description': row['description'],
+                'content': row['content'],
+                'rating': float(row['rating']) if row['rating'] else 0,
+                'views': row['views'],
+                'likes': row['likes'],
+                'comments': row['comments'],
+                'readingTime': row['readingTime'],
+                'publishedAt': row['publishedAt'],
+                'genre': [g for g in row['genre'] if g],
+                'author': {
+                    'id': row['author_id'],
+                    'name': row['author_name'],
+                    'avatar': row['author_avatar'],
+                    'rating': float(row['author_rating']) if row['author_rating'] else 0,
+                    'stories': row['author_stories']
+                }
+            }
+            
             return {
-                'statusCode': 404,
+                'statusCode': 200,
                 'headers': {
                     'Content-Type': 'application/json',
                     'Access-Control-Allow-Origin': '*'
                 },
                 'isBase64Encoded': False,
-                'body': json.dumps({'error': 'Story not found'})
+                'body': json.dumps(story)
             }
         
-        filtered_stories = mock_stories
-        if genre:
-            filtered_stories = [s for s in filtered_stories if genre in s['genre']]
-        
+        order_clause = 's.published_at DESC'
         if sort_by == 'popular':
-            filtered_stories = sorted(filtered_stories, key=lambda x: x['views'], reverse=True)
+            order_clause = 's.views DESC'
         elif sort_by == 'rating':
-            filtered_stories = sorted(filtered_stories, key=lambda x: x['rating'], reverse=True)
+            order_clause = 's.rating DESC'
+        
+        genre_filter = ''
+        genre_params = []
+        if genre:
+            genre_filter = 'WHERE %s = ANY(array_agg(sg.genre))'
+            genre_params = [genre]
+        
+        query = f'''
+            SELECT s.id, s.title, s.description, s.rating, s.views, 
+                   s.likes, s.comments_count as comments, s.reading_time as "readingTime",
+                   s.published_at::text as "publishedAt",
+                   a.id as author_id, a.name as author_name, a.avatar as author_avatar,
+                   a.rating as author_rating, a.stories_count as author_stories,
+                   array_agg(sg.genre) as genre
+            FROM stories s
+            JOIN authors a ON s.author_id = a.id
+            LEFT JOIN story_genres sg ON s.id = sg.story_id
+            GROUP BY s.id, a.id
+            ORDER BY {order_clause}
+        '''
+        
+        cur.execute(query)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        stories = []
+        for row in rows:
+            genre_list = [g for g in row['genre'] if g]
+            if genre and genre not in genre_list:
+                continue
+                
+            stories.append({
+                'id': row['id'],
+                'title': row['title'],
+                'description': row['description'],
+                'rating': float(row['rating']) if row['rating'] else 0,
+                'views': row['views'],
+                'likes': row['likes'],
+                'comments': row['comments'],
+                'readingTime': row['readingTime'],
+                'publishedAt': row['publishedAt'],
+                'genre': genre_list,
+                'author': {
+                    'id': row['author_id'],
+                    'name': row['author_name'],
+                    'avatar': row['author_avatar'],
+                    'rating': float(row['author_rating']) if row['author_rating'] else 0,
+                    'stories': row['author_stories']
+                }
+            })
         
         return {
             'statusCode': 200,
@@ -127,7 +159,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'Access-Control-Allow-Origin': '*'
             },
             'isBase64Encoded': False,
-            'body': json.dumps({'stories': filtered_stories, 'total': len(filtered_stories)})
+            'body': json.dumps({'stories': stories, 'total': len(stories)})
         }
     
     return {

@@ -1,6 +1,9 @@
 import json
+import os
 from typing import Dict, Any
 from datetime import datetime
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     '''
@@ -44,26 +47,69 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 })
             }
         
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
         if action == 'like':
-            return {
-                'statusCode': 200,
-                'headers': {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'isBase64Encoded': False,
-                'body': json.dumps({
-                    'success': True,
-                    'storyId': story_id,
-                    'likes': 90,
-                    'liked': True,
-                    'message': 'Story liked successfully'
-                })
-            }
+            cur.execute('''
+                INSERT INTO likes (story_id, user_id)
+                VALUES (%s, %s)
+                ON CONFLICT (story_id, user_id) DO NOTHING
+                RETURNING id
+            ''', (int(story_id), int(user_id)))
+            
+            inserted = cur.fetchone()
+            
+            if inserted:
+                cur.execute('''
+                    UPDATE stories
+                    SET likes = likes + 1
+                    WHERE id = %s
+                    RETURNING likes
+                ''', (int(story_id),))
+                result = cur.fetchone()
+                conn.commit()
+                cur.close()
+                conn.close()
+                
+                return {
+                    'statusCode': 200,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'isBase64Encoded': False,
+                    'body': json.dumps({
+                        'success': True,
+                        'storyId': story_id,
+                        'likes': result['likes'],
+                        'liked': True,
+                        'message': 'Story liked successfully'
+                    })
+                }
+            else:
+                cur.close()
+                conn.close()
+                return {
+                    'statusCode': 200,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'isBase64Encoded': False,
+                    'body': json.dumps({
+                        'success': False,
+                        'message': 'Already liked'
+                    })
+                }
         
         if action == 'comment':
             comment_text = body_data.get('comment')
+            user_name = body_data.get('userName', f'User{user_id}')
+            
             if not comment_text:
+                cur.close()
+                conn.close()
                 return {
                     'statusCode': 400,
                     'headers': {
@@ -74,13 +120,32 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'body': json.dumps({'error': 'Comment text is required'})
                 }
             
+            cur.execute('''
+                INSERT INTO comments (story_id, user_id, user_name, text)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id, created_at::text as created_at, likes
+            ''', (int(story_id), int(user_id), user_name, comment_text))
+            
+            result = cur.fetchone()
+            
+            cur.execute('''
+                UPDATE stories
+                SET comments_count = comments_count + 1
+                WHERE id = %s
+            ''', (int(story_id),))
+            
+            conn.commit()
+            cur.close()
+            conn.close()
+            
             new_comment = {
-                'id': 123,
+                'id': result['id'],
                 'storyId': story_id,
                 'userId': user_id,
+                'userName': user_name,
                 'text': comment_text,
-                'createdAt': datetime.now().isoformat(),
-                'likes': 0
+                'createdAt': result['created_at'],
+                'likes': result['likes']
             }
             
             return {
@@ -98,6 +163,18 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         
         if action == 'view':
+            cur.execute('''
+                UPDATE stories
+                SET views = views + 1
+                WHERE id = %s
+                RETURNING views
+            ''', (int(story_id),))
+            
+            result = cur.fetchone()
+            conn.commit()
+            cur.close()
+            conn.close()
+            
             return {
                 'statusCode': 200,
                 'headers': {
@@ -108,10 +185,13 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'body': json.dumps({
                     'success': True,
                     'storyId': story_id,
-                    'views': 1251,
+                    'views': result['views'] if result else 0,
                     'message': 'View recorded'
                 })
             }
+        
+        cur.close()
+        conn.close()
         
         return {
             'statusCode': 400,
@@ -141,24 +221,31 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'body': json.dumps({'error': 'storyId parameter required'})
             }
         
-        mock_comments = [
-            {
-                'id': 1,
-                'userId': 5,
-                'userName': 'Иван Читатель',
-                'text': 'Потрясающая история! Мурашки по коже.',
-                'createdAt': '2024-01-16T10:30:00',
-                'likes': 12
-            },
-            {
-                'id': 2,
-                'userId': 8,
-                'userName': 'Анна Страшная',
-                'text': 'Концовка превзошла все ожидания!',
-                'createdAt': '2024-01-16T14:20:00',
-                'likes': 8
-            }
-        ]
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        cur.execute('''
+            SELECT id, user_id as "userId", user_name as "userName", text, 
+                   likes, created_at::text as "createdAt"
+            FROM comments
+            WHERE story_id = %s
+            ORDER BY created_at DESC
+        ''', (int(story_id),))
+        
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        comments = []
+        for row in rows:
+            comments.append({
+                'id': row['id'],
+                'userId': row['userId'],
+                'userName': row['userName'],
+                'text': row['text'],
+                'likes': row['likes'],
+                'createdAt': row['createdAt']
+            })
         
         return {
             'statusCode': 200,
@@ -169,8 +256,8 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'isBase64Encoded': False,
             'body': json.dumps({
                 'storyId': story_id,
-                'comments': mock_comments,
-                'total': len(mock_comments)
+                'comments': comments,
+                'total': len(comments)
             })
         }
     
